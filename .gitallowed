@@ -1,0 +1,3 @@
+# Allow setup script and this file to mention the private key pattern definition
+setup-git-secrets\.sh:.*
+\.gitallowed:.*

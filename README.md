@@ -39,8 +39,18 @@ second network path. Diagnostics are added only when something fails.
 - **USB-C to USB-C data** cable, into a real USB-C/Thunderbolt port on the Mac. A USB-A
   adapter declares 500 mA and browns the board out.
 - Assumes the Mac port/cable supply enough power (board can draw up to ~15 W).
-- macOS host with `curl`, `shasum`, `diskutil`, `dd`.
+- macOS host with `curl`, `shasum`, `diskutil`, `dd`, `git-secrets`.
 - Roughly 30 minutes plus a 2.2 GB download.
+
+### Security (`git-secrets`)
+
+This repository is protected by `git-secrets` pre-commit hooks to block accidental commits
+of private keys or cloud credentials:
+
+```bash
+brew install git-secrets       # if not already installed
+./setup-git-secrets.sh         # configures core.hooksPath and registers pattern filters
+```
 
 ### Files — agent-driven, no hardware involved
 
