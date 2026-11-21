@@ -1,0 +1,10 @@
+# SHA-256 Checksums for ROC-RK3399-PC Renegade Elite Assets
+#
+# Download sources:
+# roc-rk3399-pc-spiflash.img:
+#   https://boot.libre.computer/release/roc-rk3399-pc/roc-rk3399-pc-spiflash.img
+# ubuntu-26.04.1-preinstalled-server-arm64.img.xz:
+#   https://cdimage.ubuntu.com/releases/26.04.1/release/ubuntu-26.04.1-preinstalled-server-arm64.img.xz
+
+6b21c42be6c9ae732d466a5cbbe95509bbc3ad4f121b0fa417625d9f840d09bf  roc-rk3399-pc-spiflash.img
+189b1aec3eaf9544a51dba4e6ac3f4d5d24fd1031ed0263fa5ea78f1824934c1  ubuntu-26.04.1-preinstalled-server-arm64.img.xz

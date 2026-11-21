@@ -1,0 +1,12 @@
+# Private keys
+id_renegade
+*.key
+*.pem
+
+# Large OS disk images (>100MB exceeds GitHub push limits)
+*.img.xz
+*.iso
+
+# macOS system files
+.DS_Store
+._*
