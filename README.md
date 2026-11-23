@@ -1,247 +1,94 @@
-# ROC-RK3399-PC — headless Ubuntu LTS on eMMC with SSH over USB-OTG
+# ROC-RK3399-PC — Ubuntu 26.04 LTS on eMMC via USB Wi-Fi
 
-Guidance for setting up a Libre Computer **ROC-RK3399-PC** ("Renegade Elite") with an
-eMMC module installed, running a minimal Ubuntu LTS server (no GUI), reachable over SSH
-through its USB-OTG port from a macOS host.
+Clean-slate process for installing **Ubuntu 26.04.1 LTS Server** onto the **ROC-RK3399-PC** ("Renegade Elite") eMMC module using a USB Wi-Fi adapter and SSH (`ubuntu@renegade.local`).
 
 ---
 
-## Context
+## Distilled Findings (Lessons Learned)
 
-| Fact | Consequence |
-|---|---|
-| The board has 16 MB SPI NOR holding UEFI U-Boot. | Vendor states SNOR boards boot **stock, unmodified generic Ubuntu arm64 images** — no board-specific image needed, no bootloader to write. |
-| BootROM order is **SPI → eMMC → microSD → USB** ([#92](https://hub.libre.computer/t/roc-rk3399-pc-board-boot-media-detection-sequence/92)). | SPI firmware always wins; the OS disk is chosen by U-Boot. |
-| Board requires **5.0V–5.5V up to 15W** ([#2846](https://hub.libre.computer/t/roc-rk3399-pc-renegade-elite-overview-resources-and-guides/2846)). | USB-C port on Mac or standard dumb 5V/3A supply works. Smart PD chargers can drop/reset during boot. |
-| Latest Libre Ubuntu image is **22.04.3 (Sep 2023)**, and Jammy left standard support in 2025. | Use the current generic Ubuntu LTS preinstalled server image instead (**26.04**), keeping Libre 22.04 only as last resort. |
-| The official Ubuntu **installer ISO** is listed by the vendor as "NOK — reboot loop" on these boards. | Use **preinstalled** images (`.img.xz`), never the live-server ISO. |
-| The Type-C port **next to HDMI** is both the USB-OTG data port and the only power input ([#2087](https://hub.libre.computer/t/roc-rk3399-pc-renegade-elite-usb-device-tree/2087)). | One C-to-C cable carries power and data; `poweroff` needs an unplug/replug to come back on. |
-| macOS cannot mount ext4/BTRFS. | All post-write work on the board's root filesystem happens on the board. |
-| macOS Internet Sharing runs its **own DHCP server** on the shared link. | The board is a DHCP *client* on `usb0`; reach it by mDNS at `renegade.local`. |
-| Gadget class: **CDC-ECM** is the one that works on macOS and Linux (RNDIS is Windows-only; NCM has had macOS-host lockups). | Gadget exposes an ECM Ethernet function. |
-
-## Objectives
-
-1. SPI firmware current.
-2. Ubuntu 26.04 LTS server (no GUI) installed on the eMMC at full module capacity.
-3. Headless: no display, ever. Access = `ssh admin@renegade.local` over the OTG cable.
-4. Repeatable: unplugging and replugging the cable yields SSH again with no intervention.
-
-**Non-goals:** GUI, Docker, hardware acceleration/VP9 tuning, firmware self-update, a
-second network path. Diagnostics are added only when something fails.
-
-## Prerequisites
-
-- ROC-RK3399-PC with eMMC module seated.
-- Fresh microSD card (≥ 8 GB) — SPI flasher, then trial boot, then kept as rescue.
-- USB-C flash drive (≥ 4 GB) — formatted FAT32, **never raw-written**: holds the cloud-init
-  seed and the OS image.
-- **USB-C to USB-C data** cable, into a real USB-C/Thunderbolt port on the Mac. A USB-A
-  adapter declares 500 mA and browns the board out.
-- Assumes the Mac port/cable supply enough power (board can draw up to ~15 W).
-- macOS host with `curl`, `shasum`, `diskutil`, `dd`, `git-secrets`.
-- Roughly 30 minutes plus a 2.2 GB download.
-
-### Security (`git-secrets`)
-
-This repository is protected by `git-secrets` pre-commit hooks to block accidental commits
-of private keys or cloud credentials:
-
-```bash
-brew install git-secrets       # if not already installed
-./setup-git-secrets.sh         # configures core.hooksPath and registers pattern filters
-```
-
-### Files — agent-driven, no hardware involved
-
-Assets can be fetched and verified automatically with:
-
-```bash
-cd ~/Workspaces/renegade
-./download-assets.sh
-```
-
-Or manually:
-
-```bash
-cd ~/Workspaces/renegade
-curl -LO https://cdimage.ubuntu.com/releases/26.04.1/release/ubuntu-26.04.1-preinstalled-server-arm64.img.xz
-echo '189b1aec3eaf9544a51dba4e6ac3f4d5d24fd1031ed0263fa5ea78f1824934c1  ubuntu-26.04.1-preinstalled-server-arm64.img.xz' | shasum -a 256 -c -
-curl -LO https://boot.libre.computer/release/roc-rk3399-pc/roc-rk3399-pc-spiflash.img
-ssh-keygen -t ed25519 -f ./id_renegade -N '' -C 'mac-host'
-sed -i '' "s|REPLACE-WITH-CONTENT-OF-id_renegade.pub|$(cat id_renegade.pub)|" user-data
-pmset -c sleep 0 disksleep 0      # needs sudo, and the Mac must not sleep mid-write
-```
-
-Everything above is software-only and can be run by the agent; the user only needs to
-approve the two `sudo`s (`pmset`, and later every `dd`). From step 1 onward every step
-touches physical media, so it is user-driven with the agent verifying results over SSH.
-
-[`user-data`](./user-data), [`network-config`](./network-config) and
-[`meta-data`](./meta-data) live in this directory — they are the cloud-init seed and are
-copied to the seed drive unchanged, apart from pasting your public key into `user-data`.
+1. **SPI Firmware is Done:** SPI NOR already holds current UEFI U-Boot, which natively boots generic Ubuntu `arm64` preinstalled server images (`7.0.0-generic` kernel + full `linux-firmware`). Do not re-flash SPI.
+2. **Wall Power Required:** Board + USB peripherals draw up to 15W. Laptop USB-C ports brown out; always power via a dumb **5V/3A wall adapter** into the **Type-C port next to HDMI**.
+3. **Removable eMMC Eliminates Boot Collisions:** A partial eMMC write previously blocked microSD boots due to GRUB UUID collisions and UEFI boot priority (`mmc0` vs `mmc1`). Booting microSD **with the eMMC removed** guarantees a clean boot every time, and the RK3399 eMMC socket can be bound once in Linux (or flashed after hot-seating / rebinding `sdhci-arasan`).
+   - *Safer alternative to hot-plugging:* Boot **24.04.5** on microSD with eMMC **installed**? No — Ubuntu 24.04/26.04 Server images **omit `wpasupplicant`**, so offline `.deb` packages for **26.04** are staged on `CIDATA/debs/`. Booting **26.04.1** on microSD with eMMC **removed** avoids UUID collision, then we hot-seat eMMC + rebind `fe330000.mmc` to flash it cleanly.
+4. **Offline Wi-Fi Bootstrap Trap:** Generic Ubuntu 26.04 Server omits `wpasupplicant` and `avahi-daemon` from the base image! Without `wpasupplicant`, Netplan Wi-Fi silently fails offline. Our `CIDATA/debs/` folder bundles `wpasupplicant` + `avahi-daemon` (8 arm64 `.deb`s, SHA-256 verified) and `user-data` installs them via `dpkg -i` on first boot before `netplan apply`.
+5. **User Account:** Ubuntu reserves the `admin` group name, causing `useradd admin` to fail silently. Always use `ubuntu` (with `- default`).
+6. **GRUB Timeout:** Without `GRUB_TIMEOUT=2` and `GRUB_RECORDFAIL_TIMEOUT=2`, an interrupted boot leaves GRUB stuck indefinitely at the menu screen.
 
 ---
 
-## Process
+## Prerequisites Ready in `~/Workspaces/renegade/`
 
-### 1. Update SPI firmware
+- `ubuntu-26.04.1-preinstalled-server-arm64.img.xz` (verified)
+- `id_renegade` / `id_renegade.pub` (SSH keypair)
+- `debs/` — offline `wpasupplicant` + `avahi-daemon` arm64 `.deb` packages for Ubuntu 26.04
+- `user-data`, `network-config` (local, gitignored — templated in `network-config.example`), `meta-data` (`renegade-wifi-1`)
 
-Write the flasher to the microSD card:
+---
 
-```bash
-diskutil list
-diskutil unmountDisk /dev/diskN
-sudo dd if=roc-rk3399-pc-spiflash.img of=/dev/rdiskN bs=4m status=progress; sync
-```
+## Step-by-Step Clean-Slate Process
 
-Leave the eMMC module **in** — SPI outranks it, so the flasher boots regardless. Insert the
-card and apply power by plugging the cable into the Mac. The board flashes its own SPI NOR
-in about a minute and needs no console to do it. Nothing confirms success; step 3 boots
-through SPI U-Boot either way, and the image is idempotent, so re-running this step is
-harmless.
-
-> Flashing SPI is the only hard-to-reverse step: a half-written SPI image outranks every
-> other boot source, so the cable must not be disturbed while it writes. Recovery exists
-> (hold RECOVER → Rockchip MaskROM `2207:330c` + `rkdeveloptool`, which needs a Linux host)
-> but should not be needed.
-
-*If the board gives no sign of running the flasher* (no network response, no boot
-settle): power off, remove the eMMC module, retry — this removes the boot-order variable.
-Reseat the module squarely afterwards; a half-seated module is harder to diagnose headless
-than the problem it solves.
-
-### 2. Prepare the seed drive
+### Step 1 — Prepare `CIDATA` USB-C Flash Drive (Mac)
+Format the USB-C flash drive as MBR FAT32 named `CIDATA` and copy the OS image, offline `.deb`s, and cloud-init seed files:
 
 ```bash
-diskutil list
+cd ~/Workspaces/renegade
+diskutil list                              # identify USB-C flash drive (/dev/diskN)
 diskutil unmountDisk /dev/diskN
 diskutil partitionDisk /dev/diskN 1 MBRFormat MS-DOS CIDATA 100%
-R=/Volumes/CIDATA
-cp ubuntu-26.04.1-preinstalled-server-arm64.img.xz user-data network-config meta-data "$R/"
-diskutil info "$R" | grep -E 'File System|Volume Name'   # must read MS-DOS / FAT32, label CIDATA
+cp -R ubuntu-26.04.1-preinstalled-server-arm64.img.xz debs user-data network-config meta-data /Volumes/CIDATA/
+diskutil eject /dev/diskN
 ```
 
-`instance-id` in `meta-data` is what makes cloud-init re-run. Bump it to re-seed.
-
-### 3. First boot from microSD
+### Step 2 — Flash Ubuntu 26.04.1 to microSD (Mac)
 
 ```bash
-diskutil list
+cd ~/Workspaces/renegade
+diskutil list                              # identify microSD card (/dev/diskN)
 diskutil unmountDisk /dev/diskN
-sudo dd if=ubuntu-26.04.1-preinstalled-server-arm64.img.xz of=/dev/rdiskN bs=4m status=progress; sync
+xz -dc ubuntu-26.04.1-preinstalled-server-arm64.img.xz | sudo dd of=/dev/rdiskN bs=4m status=progress; sync
+diskutil eject /dev/diskN
 ```
 
-Assemble: microSD in, USB-C drive in a **host** Type-C port, single C-to-C cable from the
-**OTG port (the Type-C next to HDMI)** to the Mac.
+### Step 3 — Boot microSD Without eMMC (Board)
+1. **Remove the eMMC module** from the board (prevents UUID/UEFI collision with the partial eMMC write).
+2. Insert:
+   - **microSD card**
+   - **`CIDATA` USB-C drive** into the **outer Type-C host port** (away from HDMI)
+   - **USB Wi-Fi adapter** into a USB-A port
+3. Plug **5V/3A wall power** into the **Type-C port next to HDMI**.
+4. Wait ~2–3 minutes (boots → installs `wpasupplicant` & `avahi-daemon` from `CIDATA/debs` → auto-reboots → joins Wi-Fi).
+5. Verify SSH from Mac:
+   ```bash
+   ssh -i ~/Workspaces/renegade/id_renegade ubuntu@renegade.local
+   ```
 
-This overwrites the SPI flasher card. That is fine — the firmware is written — and this
-same microSD boot is the rescue system for the rest of the process and afterwards.
+### Step 4 — Attach & Flash eMMC (Over SSH)
+1. Carefully **snap the eMMC module onto its socket** (Libre Computer confirms RK3399 eMMC is hot-pluggable via driver bind/rebind), then probe it:
+   ```bash
+   echo fe330000.mmc | sudo tee /sys/bus/platform/drivers/sdhci-arasan/unbind 2>/dev/null || true
+   echo fe330000.mmc | sudo tee /sys/bus/platform/drivers/sdhci-arasan/bind
+   lsblk -o NAME,SIZE,MOUNTPOINT
+   ```
+   *(Confirm `/dev/mmcblk0` appears as the ~59 GB eMMC and `/dev/mmcblk1` is `/`.)*
+2. Stream the clean 26.04.1 image to `/dev/mmcblk0` (**without** `oflag=sync` so it completes in ~1 min, followed by `sync`):
+   ```bash
+   sudo mkdir -p /mnt/cidata
+   sudo mount -o ro $(blkid -L CIDATA) /mnt/cidata
+   xz -dc /mnt/cidata/ubuntu-26.04.1-preinstalled-server-arm64.img.xz \
+     | sudo dd of=/dev/mmcblk0 bs=16M status=progress && sync
+   sudo partprobe /dev/mmcblk0
+   sudo poweroff
+   ```
 
-First boot takes about two minutes (filesystem resize, then cloud-install). There is no
-password — the `admin` account is key-only.
-
-```bash
-ssh -i ~/Workspaces/renegade/id_renegade admin@renegade.local
-```
-
-If the name does not resolve: `dns-sd -G v4 renegade.local`, then `arp -a | grep 10.55.0`.
-
-Before touching the eMMC:
-
-```bash
-cloud-init status --wait && uname -r
-```
-
-### 4. Install to eMMC
-
-Stream the image from the seed drive directly to the eMMC (`/dev/mmcblk0`).
-Because it is a clean image write, Ubuntu's cloud-init will automatically grow the
-partition to the full eMMC capacity and resize the filesystem on first boot — no manual
-`growpart` or filesystem resizing needed.
-
-The board is booted from microSD, so **`mmcblk0` = eMMC** and **`mmcblk1` = microSD**.
-
-```bash
-lsblk -o NAME,SIZE,MOUNTPOINT,MODEL      # confirm mmcblk0 is the eMMC and mmcblk1 is the microSD
-ls -d /media/*/CIDATA                    # verify seed drive is mounted
-SEED=$(echo /media/*/CIDATA)
-ls -l "$SEED"                            # should show the .img.xz and seed files
-```
-
-> **`of=/dev/mmcblk0`** — the *eMMC*, the whole disk. A wrong target destroys the
-> system the board is currently running. Double-check `lsblk` before proceeding.
-
-```bash
-sudo xz -dc "$SEED/ubuntu-26.04.1-preinstalled-server-arm64.img.xz" \
-  | sudo dd of=/dev/mmcblk0 bs=64M status=progress oflag=sync
-sync
-```
-
-Power off the board (unplug the USB-C cable).
-Remove the microSD card, **leave the seed drive plugged in**, and re-apply power.
-The eMMC boots as a pristine image: cloud-init provisions it, expands the partition to full
-eMMC capacity, and generates fresh SSH host keys (~2 minutes).
-
-Once verified via SSH, the seed drive can be removed.
-
-### 5. Verify
-
-```bash
-lsblk /dev/mmcblk0            # root on eMMC, grown to module size
-df -h /
-cloud-init status --wait
-systemctl is-enabled ssh avahi-daemon usb-gadget
-ip -br a
-```
-
-**Acceptance test:** enable System Settings → General → Sharing → **Internet Sharing →
-Thunderbolt/USB-C**, confirm `ping -c3 1.1.1.1` and `sudo apt update`, then unplug the
-cable, wait 10 s, replug — `ssh admin@renegade.local` answers again on its own.
-
-Run `sudo apt update && sudo apt full-upgrade` over the cable, then move the board to
-`eth0` for the LAN.
-
----
-
-## If something fails
-
-| Symptom | Action |
-|---|---|
-| Kernel panics / no console handoff from eMMC | Device-tree hand-off. Copy `/usr/lib/firmware/*/device-tree/rockchip/rk3399-roc-pc.dtb` to `/boot/dtb/rockchip/`, set `GRUB_DEVICE_TREE=/boot/dtb/rockchip/rk3399-roc-pc.dtb`, `update-grub`. |
-| Gadget never enumerates on the Mac | Boot the microSD rescue copy. Check `dmesg \| grep -i dwc3` and `ls /sys/class/udc`. |
-| No SSH but link is up | `systemctl status ssh avahi-daemon usb-gadget`; connect by `10.55.0.1` instead of the mDNS name. |
-| 26.04 misbehaves on this board | Copy `ubuntu-24.04.5-preinstalled-server-arm64.img.xz` to the seed drive as well, then repeat steps 3–4 with it, and `sudo apt install linux-modules-extra-$(uname -r)` (24.04 splits drivers out; 26.04 does not). |
-| Last resort image | Libre `ubuntu-22.04.3-preinstalled-base-arm64+arm64` — `root`/`root`, no cloud-init, `apt install ssh`. Past standard support. |
-| Board does not boot at all | Hold RECOVER, plug in, look for `2207:330c` in `lsusb` from a Linux host → `rkdeveloptool`. |
-| Reboot loop / shut-off during boot | Marginal power or USB-PD renegotiation ([#2846](https://hub.libre.computer/t/roc-rk3399-pc-renegade-elite-overview-resources-and-guides/2846)). Use dumb 5V 3A (15W) power or powered USB-C hub. |
-| RAM or hardware instability suspected | Run the official [ROC-RK3399-PC Memory Test (#93)](https://hub.libre.computer/t/roc-rk3399-pc-renegade-elite-memory-test/93) image. |
-
-### Deliberately deferred
-
-SPI content read-back, a USB-ACM serial console function (the fallback when SSH doesn't
-come up), the 3-pin debug UART (needs 1.5 Mbps — a CP2102 cable tops out at 1 Mbps),
-gadget re-arm on reconnect, journald persistence.
-
-## Sources & Official Documentation
-
-Linked from the [ROC-RK3399-PC Help Tab](https://libre.computer/products/roc-rk3399-pc/#help):
-
-- **Official Guides:**
-  - [ROC-RK3399-PC Firmware (#151)](https://hub.libre.computer/t/roc-rk3399-pc-firmware/151) — SPI flash image and update procedure
-  - [ROC-RK3399-PC Overview, Resources and Guides (#2846)](https://hub.libre.computer/t/roc-rk3399-pc-renegade-elite-overview-resources-and-guides/2846) — Power requirements (5.0V–5.5V, 15W) and LED controls
-  - [Boot Media Detection Sequence (#92)](https://hub.libre.computer/t/roc-rk3399-pc-board-boot-media-detection-sequence/92) — BootROM order: SPI → eMMC → microSD → USB OTG
-  - [USB Device Tree (#2087)](https://hub.libre.computer/t/roc-rk3399-pc-renegade-elite-usb-device-tree/2087) — Controller enumeration and port assignments
-  - [ROC-RK3399-PC Memory Test (#93)](https://hub.libre.computer/t/roc-rk3399-pc-renegade-elite-memory-test/93) — Standalone RAM diagnostic
-- **Hardware & Software References:**
-  - [Interactive GPIO Pinout](https://gpio.hardware.libre.computer/?board=roc-rk3399-pc)
-  - [Power Tree Architecture](https://power.hardware.libre.computer/?board=roc-rk3399-pc)
-  - [U-Boot Features & Status](https://u-boot.software.libre.computer/features/?board=roc-rk3399-pc)
-  - [ROC-RK3399-PC Schematic](https://drive.google.com/file/d/162C8mfrm1__Lm5sD4PtgNaOAYpAAxsHG/view?usp=sharing)
-  - [Renegade Elite Hub Discussions](https://hub.libre.computer/tag/roc-rk3399-pc)
-- **Firmware & OS Downloads:**
-  - SPI Update Image: `https://boot.libre.computer/release/roc-rk3399-pc/roc-rk3399-pc-spiflash.img` (or `https://boot.libre.computer/ci/roc-rk3399-pc-spiflash`)
-  - Ubuntu Releases: `https://cdimage.ubuntu.com/releases/`
-  - [Firmware Update Images Thread (#3113)](https://hub.libre.computer/t/libre-computer-board-bios-firmware-update-images/3113)
-  - [Ubuntu 22.04 LTS Images Thread (#20)](https://hub.libre.computer/t/ubuntu-22-04-jammy-lts-for-libre-computer-boards/20)
-  - [Developer Boot Guide Thread (#4245)](https://hub.libre.computer/t/roc-rk3399-pc-renegade-elite-developer-boot-guide/4245)
+### Step 5 — Boot eMMC Standalone & Verify
+1. Unplug wall power.
+2. **Remove the microSD card** (keep as rescue).
+3. **Leave `CIDATA` USB-C drive and USB Wi-Fi adapter plugged in.**
+4. Plug wall power back in and wait ~2–3 minutes (cloud-init expands eMMC to full 59 GB, installs offline `wpasupplicant` + `avahi-daemon`, regenerates SSH host keys, reboots onto Wi-Fi).
+5. SSH in and verify:
+   ```bash
+   ssh-keygen -R renegade.local
+   ssh -i ~/Workspaces/renegade/id_renegade ubuntu@renegade.local
+   lsblk /dev/mmcblk0 && df -h / && ip -br a
+   ```
+6. Remove the `CIDATA` USB-C drive.

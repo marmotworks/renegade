@@ -1,10 +1,10 @@
-# SHA-256 Checksums for ROC-RK3399-PC Renegade Elite Assets
-#
-# Download sources:
-# roc-rk3399-pc-spiflash.img:
-#   https://boot.libre.computer/release/roc-rk3399-pc/roc-rk3399-pc-spiflash.img
-# ubuntu-26.04.1-preinstalled-server-arm64.img.xz:
-#   https://cdimage.ubuntu.com/releases/26.04.1/release/ubuntu-26.04.1-preinstalled-server-arm64.img.xz
-
 6b21c42be6c9ae732d466a5cbbe95509bbc3ad4f121b0fa417625d9f840d09bf  roc-rk3399-pc-spiflash.img
 189b1aec3eaf9544a51dba4e6ac3f4d5d24fd1031ed0263fa5ea78f1824934c1  ubuntu-26.04.1-preinstalled-server-arm64.img.xz
+0440f761ebaa1c14327edd49cf98507a83ea2477fcf454bf76d63a3e4ce855e0  debs/libnl-genl-3-200_3.12.0-2_arm64.deb
+e5da7807873b006b8e54fd8128325c672b7dfcf11af2cd5d719a1b73849d9a58  debs/libpcsclite1_2.4.1-1_arm64.deb
+b198620a0e4de5d437164d72f554b460ca88629dde9540b7900463382efebeea  debs/wpasupplicant_2.11-0ubuntu5_arm64.deb
+2d4a0aedf1d652e16f8f5405cfd0d8c0157c308af5760bbe0cf8bcd1a4b1b639  debs/avahi-daemon_0.8-18ubuntu1_arm64.deb
+9111607b531907d073ce0beb7dfd37b8850e72564d7609198a1c451b47897420  debs/libavahi-common-data_0.8-18ubuntu1_arm64.deb
+cc6862dedee767482f18f148771d7ba007d94984d40799b318f104c2cd428e99  debs/libavahi-common3_0.8-18ubuntu1_arm64.deb
+fce4874110ebe295c7710e83b613ec435a5d45f29f8c9225ce6cbf299061b715  debs/libavahi-core7_0.8-18ubuntu1_arm64.deb
+ee696df9cb3210438b6bb06b612980ac2c2d70ac34bfc66d0fad8681a917812a  debs/libdaemon0_0.14-7.1ubuntu5_arm64.deb

@@ -1,84 +1,47 @@
 #cloud-config
-# NoCloud seed for the ROC-RK3399-PC. Copied to the FAT32 "CIDATA" volume on the USB-C
-# flash drive, which the board mounts from its host-side Type-C port.
-#
-# Network is declared in the sibling network-config file (cloud-init renders that into
-# /etc/netplan), so netplan stays the single owner of every interface.
+# NoCloud seed for ROC-RK3399-PC (Ubuntu 26.04.1 LTS).
+# Installs offline wpasupplicant + avahi-daemon from CIDATA /debs before online boot,
+# because generic Ubuntu Server arm64 omits wpasupplicant by default.
 
 preserve_hostname: true
 
 users:
-  - name: admin
+  - default
+  - name: ubuntu
     groups: [sudo, adm]
     shell: /bin/bash
-    lock_passwd: true
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    lock_passwd: false
     ssh_authorized_keys:
       - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIM2VhzI0h99j4UsZYjkhGIcUmgLhuOZGUEEc7SPD5N2g mac-host
 
 ssh_pwauth: false
 
-package_update: true
-packages: [openssh-server, avahi-daemon]
-
 write_files:
-  # USB-OTG gadget on the Type-C port next to HDMI, which is also the power input.
-  # CDC-ECM is the class both macOS and Linux accept; RNDIS is Windows-only and NCM has
-  # a history of locking up against a macOS host.
-  - path: /usr/local/sbin/usb-gadget
-    permissions: 0755
-    content: |
-      #!/bin/sh
-      set -e
-      G=/sys/kernel/config/usb_gadget/g1
-      mkdir -p "$G"
-      cd "$G"
-
-      # Re-arm after a reconnect: drop any existing binding first.
-      if [ -n "$(cat UDC 2>/dev/null)" ]; then echo "" > UDC; fi
-
-      echo 0x1d6b > idVendor            # Linux Foundation
-      echo 0x0103 > idProduct            # Linux-USB Ethernet/RNDIS Gadget
-      echo 0x0100 > bcdDevice
-      mkdir -p strings/0x409
-      echo "LibreComputer" > strings/0x409/manufacturer
-      echo "ROC-RK3399-PC"  > strings/0x409/product
-      echo "0cdeadbeef0001" > strings/0x409/serialnumber
-
-      mkdir -p configs/c.1/strings/0x409
-      echo "CDC Ethernet" > configs/c.1/strings/0x409/configuration
-
-      mkdir -p functions/ecm.usb0
-      # Pinned addresses keep the Mac-side entry stable across replugs.
-      echo 02:00:00:00:00:01 > functions/ecm.usb0/dev_addr
-      echo 02:00:00:00:00:02 > functions/ecm.usb0/host_addr
-
-      # configfs links must be relative to the gadget directory.
-      ln -sf functions/ecm.usb0 configs/c.1/usb0
-
-      echo "$(ls /sys/class/udc | head -n1)" > UDC
-
-  - path: /etc/systemd/system/usb-gadget.service
-    content: |
-      [Unit]
-      Description=USB-OTG CDC-ECM gadget (SSH-over-USB access path)
-
-      [Service]
-      Type=oneshot
-      RemainAfterExit=yes
-      ExecStart=/usr/local/sbin/usb-gadget
-
-      [Install]
-      WantedBy=multi-user.target
-
-  # A headless board must never stall on a boot menu it cannot see.
   - path: /etc/default/grub.d/99-headless.cfg
     content: |
       GRUB_TIMEOUT=2
       GRUB_RECORDFAIL_TIMEOUT=2
 
 runcmd:
-  - [ systemctl, enable, usb-gadget.service ]
-  # Fresh host keys every provisioning, so media copies never share fingerprints.
+  - |
+    set -e
+    mkdir -p /mnt/cidata
+    DEV=$(blkid -L CIDATA || true)
+    if [ -n "$DEV" ]; then
+      mount -o ro "$DEV" /mnt/cidata 2>/dev/null || true
+    fi
+    for d in /mnt/cidata/debs /run/cloud-init/tmp/*/debs; do
+      if [ -d "$d" ] && ls "$d"/*.deb >/dev/null 2>&1; then
+        dpkg -i "$d"/*.deb || true
+        break
+      fi
+    done
+    umount /mnt/cidata 2>/dev/null || true
+  - [ rfkill, unblock, wifi ]
+  - [ netplan, generate ]
+  - [ netplan, apply ]
+  - [ systemctl, enable, --now, avahi-daemon ]
   - [ rm, -f, /etc/ssh/ssh_host_* ]
   - [ dpkg-reconfigure, -f, noninteractive, openssh-server ]
   - [ update-grub ]

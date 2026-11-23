@@ -1,0 +1,17 @@
+version: 2
+renderer: networkd
+wifis:
+  wlan:
+    match:
+      name: "wl*"
+    dhcp4: true
+    optional: true
+    access-points:
+      "REPLACE_WITH_WIFI_SSID":
+        password: "REPLACE_WITH_WIFI_PASSWORD"
+ethernets:
+  lan:
+    match:
+      name: "e*"
+    dhcp4: true
+    optional: true

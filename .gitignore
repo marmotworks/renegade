@@ -1,9 +1,12 @@
-# Private keys
+# Private keys & Wi-Fi credentials
 id_renegade
 *.key
 *.pem
+network-config
 
-# Large OS disk images (>100MB exceeds GitHub push limits)
+# Downloaded packages & large OS disk images
+debs/
+*.deb
 *.img.xz
 *.iso
 
